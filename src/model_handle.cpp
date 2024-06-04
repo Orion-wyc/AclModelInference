@@ -10,8 +10,6 @@
 
 namespace aclapp {
 aclError ModelHandle::InitResource() {
-  APP_CHK_STATUS(aclInit(nullptr));
-  APP_CHK_STATUS(aclrtSetDevice(deviceId_));
   return ACL_SUCCESS;
 }
 
@@ -36,8 +34,23 @@ aclError ModelHandle::Inference() {
 aclError ModelHandle::InferenceDynamic() {
   APP_CHK_STATUS(CreateModelInput());
   APP_CHK_STATUS(CreateModelOutput(true));
+
+  // 设置输入 shape
+  int64_t inputShape[4] = {1, 3, 224, 224};
+  aclTensorDesc *inputDesc = aclCreateTensorDesc(ACL_FLOAT, 4, inputShape, ACL_FORMAT_NCHW);
+  APP_CHK_NOTNULL(inputDesc);
+  APP_CHK_STATUS(aclmdlSetDatasetTensorDesc(inputDataSet_, inputDesc, 0));
+
+  // 执行动态shape推理
   APP_CHK_STATUS(aclmdlExecuteAsync(modelId_, inputDataSet_, outputDataSet_, stream_));
   APP_CHK_STATUS(aclrtSynchronizeStreamWithTimeout(stream_, 3000));
+
+  // 获取输出实际大小，此处刷新后会按照实际大小进行拷贝
+  aclTensorDesc *outputDesc = aclmdlGetDatasetTensorDesc(outputDataSet_, 0);
+  APP_CHK_NOTNULL(outputDesc);
+  outputDataSize_ = aclGetTensorDescSize(outputDesc);
+  LOG_INFO("output data size of outputDesc is %lu", outputDataSize_);
+
   return ACL_SUCCESS;
 }
 
@@ -102,8 +115,6 @@ aclError ModelHandle::UnloadPicture() {
 }
 
 aclError ModelHandle::DestroyResource() {
-  APP_CHK_STATUS(aclrtResetDevice(deviceId_));
-  APP_CHK_STATUS(aclFinalize());
   return ACL_SUCCESS;
 }
 

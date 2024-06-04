@@ -20,6 +20,14 @@ class ModelHandle {
   aclError Inference();
   aclError InferenceDynamic();
 
+  void SetStream(aclrtStream stream) {
+    stream_ = stream;
+  }
+
+  aclrtStream GetStream() const {
+    return stream_;
+  }
+
   void SetDynamicOutputSize(const size_t outSize) {
     dynamicOutputSize_ = outSize;
   }
