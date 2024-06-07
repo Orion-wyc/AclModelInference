@@ -1,9 +1,10 @@
 #include <cstdlib>
 
 #include "acl/acl.h"
+#include "acl/acl_rt_allocator.h"
 #include "model_handle.h"
 #include "log.h"
-
+#include "allocator.h"
 
 // 1.定义一个资源初始化的函数，用于AscendCL初始化、运行管理资源申请（指定计算设备）
 aclError InitResource(int32_t deviceId) {
@@ -60,7 +61,42 @@ aclError TestDynamicModel(aclapp::ModelHandle &modelHandle) {
   return ACL_SUCCESS;
 }
 
-void TestMultipleModelsShareStream(bool isDynamic) {
+void *RawMalloc(aclrtAllocator allocator, size_t size) {
+  return static_cast<mds::Allocator *>(allocator)->Malloc(size);
+}
+
+void RawFree(aclrtAllocator allocator, void *block) {
+  return static_cast<mds::Allocator *>(allocator)->Free(block);
+}
+
+void *RawMallocAdvise(aclrtAllocator allocator, size_t size, aclrtAllocatorAddr addr) {
+  return static_cast<mds::Allocator *>(allocator)->MallocAdvise(size, addr);
+}
+
+void *RawGetBlockAddr(aclrtAllocatorBlock block) {
+  return block;
+}
+
+aclError RegisterCustomAllocator(aclrtAllocator allocator, aclrtStream stream) {
+  // 创建AllocatorDesc
+  aclrtAllocatorDesc allocatorDesc = aclrtAllocatorCreateDesc();
+
+  // 初始化
+  APP_CHK_STATUS(aclrtAllocatorSetObjToDesc(allocatorDesc, allocator));
+  APP_CHK_STATUS(aclrtAllocatorSetAllocFuncToDesc(allocator, RawMalloc));
+  APP_CHK_STATUS(aclrtAllocatorSetFreeFuncToDesc(allocator, RawFree));
+  APP_CHK_STATUS(aclrtAllocatorSetAllocAdviseFuncToDesc(allocator, RawMallocAdvise));
+  APP_CHK_STATUS(aclrtAllocatorSetGetAddrFromBlockFuncToDesc(allocator, RawGetBlockAddr));
+
+  // 注册
+  APP_CHK_STATUS(aclrtAllocatorRegister(stream, allocatorDesc));
+
+  // 销毁AllocatorDesc
+  APP_CHK_STATUS(aclrtAllocatorDestroyDesc(allocatorDesc));
+  return ACL_SUCCESS;
+}
+
+aclError TestMultipleModelsShareStream(bool isDynamic) {
   if (!isDynamic) {
     LOG_INFO("Begin to test static model.");
     aclapp::ModelHandle modelHandle1(nullptr);
@@ -71,12 +107,19 @@ void TestMultipleModelsShareStream(bool isDynamic) {
     aclrtStream stream = nullptr;
     (void)aclrtCreateStream(&stream);
     APP_CHK_NOTNULL(stream);
-    aclapp::ModelHandle modelHandle1();
+
+    mds::Allocator allocator;
+    RegisterCustomAllocator(&allocator, stream);
+
+    aclapp::ModelHandle modelHandle1;
     modelHandle1.SetStream(stream);
     (void)TestDynamicModel(modelHandle1);
 
+    APP_CHK_STATUS(aclrtAllocatorUnregister(stream));
+    APP_CHK_STATUS(aclrtDestroyStream(stream));
     ReleaseModelResource(modelHandle1);
   }
+  return ACL_SUCCESS;
 }
 
 bool EnableDynamicShape(const std::string &envVarName) {
@@ -95,10 +138,10 @@ int main() {
 
   if (EnableDynamicShape("ENABLE_RUNTIME_V2")) {
     // 测试动态Shape模型推理
-    TestMultipleModelsShareStream(true);
+    (void)TestMultipleModelsShareStream(true);
   } else {
     // 测试静态Shape模型推理
-    TestMultipleModelsShareStream(false);
+    (void)TestMultipleModelsShareStream(false);
   }
 
   DestroyResource(deviceId);

@@ -9,7 +9,7 @@ project(ACL_RESNET50)
 # Compile options
 add_compile_options(-std=c++11)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY  "../../../out")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "../../../out")
 set(CMAKE_CXX_FLAGS_DEBUG "-fPIC -O0 -g -Wall")
 set(CMAKE_CXX_FLAGS_RELEASE "-fPIC -O2 -Wall")
 
@@ -40,33 +40,34 @@ else ()
     message(STATUS "env LIB_PATH: ${LIB_PATH}")
 endif ()
 
-# Header path
-include_directories(
-    ${INC_PATH}/acllib/include/
-)
-
-if(target STREQUAL "Simulator_Function")
+if (target STREQUAL "Simulator_Function")
     add_compile_options(-DFUNC_SIM)
-endif()
+endif ()
 
 # add host lib path
 link_directories(
-    ${LIB_PATH}
+        ${LIB_PATH}
 )
 
 add_executable(main
         main.cpp
         model_handle.cpp)
 
+# Header path
+target_include_directories(main PRIVATE
+        ${INC_PATH}/acllib/include/
+        ${INC_PATH}/include
+        )
+
 if (target STREQUAL "Simulator_Function")
     target_link_libraries(main funcsim)
 else ()
     if (${CMAKE_HOST_SYSTEM_NAME} MATCHES "Windows")
         target_link_libraries(main
-            libascendcl)
+                libascendcl)
     else ()
         target_link_libraries(main
-            ascendcl stdc++)
+                ascendcl stdc++)
     endif ()
 endif ()
 
